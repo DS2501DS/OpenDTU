@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright (C) 2022 Thomas Basler and others
+ * Copyright (C) 2022-2024 Thomas Basler and others
  */
 #include "Configuration.h"
+#include "Datastore.h"
 #include "Display_Graphic.h"
 #include "InverterSettings.h"
 #include "Led_Single.h"
@@ -10,23 +11,32 @@
 #include "MqttHandleDtu.h"
 #include "MqttHandleHass.h"
 #include "MqttHandleInverter.h"
+#include "MqttHandleInverterTotal.h"
 #include "MqttSettings.h"
 #include "NetworkSettings.h"
 #include "NtpSettings.h"
 #include "PinMapping.h"
+#include "Scheduler.h"
 #include "SunPosition.h"
 #include "Utils.h"
 #include "WebApi.h"
 #include "defaults.h"
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <TaskScheduler.h>
 
 void setup()
 {
     // Initialize serial output
     Serial.begin(SERIAL_BAUDRATE);
+#if ARDUINO_USB_CDC_ON_BOOT
+    Serial.setTxTimeoutMs(0);
+    delay(100);
+#else
     while (!Serial)
         yield();
+#endif
+    MessageOutput.init(scheduler);
     MessageOutput.println();
     MessageOutput.println("Starting OpenDTU");
 
@@ -54,11 +64,11 @@ void setup()
             MessageOutput.print("failed... ");
         }
     }
-    if (Configuration.get().Cfg_Version != CONFIG_VERSION) {
+    if (Configuration.get().Cfg.Version != CONFIG_VERSION) {
         MessageOutput.print("migrated... ");
         Configuration.migrate();
     }
-    CONFIG_T& config = Configuration.get();
+    auto& config = Configuration.get();
     MessageOutput.println("done");
 
     // Load PinMapping
@@ -68,12 +78,12 @@ void setup()
     } else {
         MessageOutput.print("using default config ");
     }
-    const PinMapping_t& pin = PinMapping.get();
+    const auto& pin = PinMapping.get();
     MessageOutput.println("done");
 
     // Initialize WiFi
     MessageOutput.print("Initialize Network... ");
-    NetworkSettings.init();
+    NetworkSettings.init(scheduler);
     MessageOutput.println("done");
     NetworkSettings.applyConfig();
 
@@ -84,78 +94,65 @@ void setup()
 
     // Initialize SunPosition
     MessageOutput.print("Initialize SunPosition... ");
-    SunPosition.init();
+    SunPosition.init(scheduler);
     MessageOutput.println("done");
 
     // Initialize MqTT
     MessageOutput.print("Initialize MqTT... ");
     MqttSettings.init();
-    MqttHandleDtu.init();
-    MqttHandleInverter.init();
-    MqttHandleHass.init();
+    MqttHandleDtu.init(scheduler);
+    MqttHandleInverter.init(scheduler);
+    MqttHandleInverterTotal.init(scheduler);
+    MqttHandleHass.init(scheduler);
     MessageOutput.println("done");
 
     // Initialize WebApi
     MessageOutput.print("Initialize WebApi... ");
-    WebApi.init();
+    WebApi.init(scheduler);
     MessageOutput.println("done");
 
     // Initialize Display
     MessageOutput.print("Initialize Display... ");
     Display.init(
+        scheduler,
         static_cast<DisplayType_t>(pin.display_type),
         pin.display_data,
         pin.display_clk,
         pin.display_cs,
         pin.display_reset);
-    Display.setOrientation(config.Display_Rotation);
-    Display.enablePowerSafe = config.Display_PowerSafe;
-    Display.enableScreensaver = config.Display_ScreenSaver;
-    Display.setContrast(config.Display_Contrast);
+    Display.setOrientation(config.Display.Rotation);
+    Display.enablePowerSafe = config.Display.PowerSafe;
+    Display.enableScreensaver = config.Display.ScreenSaver;
+    Display.setContrast(config.Display.Contrast);
+    Display.setLanguage(config.Display.Language);
+    Display.setDiagramMode(static_cast<DiagramMode_t>(config.Display.Diagram.Mode));
     Display.setStartupDisplay();
     MessageOutput.println("done");
 
     // Initialize Single LEDs
     MessageOutput.print("Initialize LEDs... ");
-    LedSingle.init();
+    LedSingle.init(scheduler);
     MessageOutput.println("done");
 
     // Check for default DTU serial
     MessageOutput.print("Check for default DTU serial... ");
-    if (config.Dtu_Serial == DTU_SERIAL) {
+    if (config.Dtu.Serial == DTU_SERIAL) {
         MessageOutput.print("generate serial based on ESP chip id: ");
-        uint64_t dtuId = Utils::generateDtuSerial();
+        const uint64_t dtuId = Utils::generateDtuSerial();
         MessageOutput.printf("%0x%08x... ",
             ((uint32_t)((dtuId >> 32) & 0xFFFFFFFF)),
             ((uint32_t)(dtuId & 0xFFFFFFFF)));
-        config.Dtu_Serial = dtuId;
+        config.Dtu.Serial = dtuId;
         Configuration.write();
     }
     MessageOutput.println("done");
 
-    InverterSettings.init();
+    InverterSettings.init(scheduler);
+
+    Datastore.init(scheduler);
 }
 
 void loop()
 {
-    NetworkSettings.loop();
-    yield();
-    InverterSettings.loop();
-    yield();
-    MqttHandleDtu.loop();
-    yield();
-    MqttHandleInverter.loop();
-    yield();
-    MqttHandleHass.loop();
-    yield();
-    WebApi.loop();
-    yield();
-    Display.loop();
-    yield();
-    SunPosition.loop();
-    yield();
-    MessageOutput.loop();
-    yield();
-    LedSingle.loop();
-    yield();
+    scheduler.execute();
 }

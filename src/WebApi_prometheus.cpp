@@ -1,7 +1,7 @@
 
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright (C) 2022 Thomas Basler and others
+ * Copyright (C) 2022-2023 Thomas Basler and others
  */
 #include "WebApi_prometheus.h"
 #include "Configuration.h"
@@ -10,11 +10,11 @@
 #include "WebApi.h"
 #include <Hoymiles.h>
 
-void WebApiPrometheusClass::init(AsyncWebServer* server)
+void WebApiPrometheusClass::init(AsyncWebServer& server)
 {
     using std::placeholders::_1;
 
-    _server = server;
+    _server = &server;
 
     _server->on("/api/prometheus/metrics", HTTP_GET, std::bind(&WebApiPrometheusClass::onPrometheusMetricsGet, this, _1));
 }
@@ -25,6 +25,10 @@ void WebApiPrometheusClass::loop()
 
 void WebApiPrometheusClass::onPrometheusMetricsGet(AsyncWebServerRequest* request)
 {
+    if (!WebApi.checkCredentialsReadonly(request)) {
+        return;
+    }
+
     try {
         auto stream = request->beginResponseStream("text/plain; charset=utf-8", 40960);
 
@@ -49,9 +53,21 @@ void WebApiPrometheusClass::onPrometheusMetricsGet(AsyncWebServerRequest* reques
         stream->print("# TYPE opendtu_free_heap_size gauge\n");
         stream->printf("opendtu_free_heap_size %zu\n", ESP.getFreeHeap());
 
+        stream->print("# HELP opendtu_biggest_heap_block Biggest free heap block\n");
+        stream->print("# TYPE opendtu_biggest_heap_block gauge\n");
+        stream->printf("opendtu_biggest_heap_block %zu\n", ESP.getMaxAllocHeap());
+
+        stream->print("# HELP opendtu_heap_min_free Minimum free memory since boot\n");
+        stream->print("# TYPE opendtu_heap_min_free gauge\n");
+        stream->printf("opendtu_heap_min_free %zu\n", ESP.getMinFreeHeap());
+
         stream->print("# HELP wifi_rssi WiFi RSSI\n");
         stream->print("# TYPE wifi_rssi gauge\n");
         stream->printf("wifi_rssi %d\n", WiFi.RSSI());
+
+        stream->print("# HELP wifi_station WiFi Station info\n");
+        stream->print("# TYPE wifi_station gauge\n");
+        stream->printf("wifi_station{bssid=\"%s\"} 1\n", WiFi.BSSIDstr().c_str());
 
         for (uint8_t i = 0; i < Hoymiles.getNumInverters(); i++) {
             auto inv = Hoymiles.getInverterByPos(i);
@@ -65,29 +81,34 @@ void WebApiPrometheusClass::onPrometheusMetricsGet(AsyncWebServerRequest* reques
             stream->printf("opendtu_last_update{serial=\"%s\",unit=\"%d\",name=\"%s\"} %d\n",
                 serial.c_str(), i, name, inv->Statistics()->getLastUpdate() / 1000);
 
+            if (i == 0) {
+                stream->print("# HELP opendtu_inverter_limit_relative current relative limit of the inverter\n");
+                stream->print("# TYPE opendtu_inverter_limit_relative gauge\n");
+            }
+            stream->printf("opendtu_inverter_limit_relative{serial=\"%s\",unit=\"%d\",name=\"%s\"} %f\n",
+                serial.c_str(), i, name, inv->SystemConfigPara()->getLimitPercent() / 100.0);
+
+            if (inv->DevInfo()->getMaxPower() > 0) {
+                if (i == 0) {
+                    stream->print("# HELP opendtu_inverter_limit_absolute current relative limit of the inverter\n");
+                    stream->print("# TYPE opendtu_inverter_limit_absolute gauge\n");
+                }
+                stream->printf("opendtu_inverter_limit_absolute{serial=\"%s\",unit=\"%d\",name=\"%s\"} %f\n",
+                    serial.c_str(), i, name, inv->SystemConfigPara()->getLimitPercent() * inv->DevInfo()->getMaxPower() / 100.0);
+            }
+
             // Loop all channels if Statistics have been updated at least once since DTU boot
             if (inv->Statistics()->getLastUpdate() > 0) {
                 for (auto& t : inv->Statistics()->getChannelTypes()) {
                     for (auto& c : inv->Statistics()->getChannelsByType(t)) {
                         addPanelInfo(stream, serial, i, inv, t, c);
-                        addField(stream, serial, i, inv, t, c, FLD_PAC);
-                        addField(stream, serial, i, inv, t, c, FLD_UAC);
-                        addField(stream, serial, i, inv, t, c, FLD_IAC);
-                        if (t == TYPE_AC) {
-                            addField(stream, serial, i, inv, t, c, FLD_PDC, "PowerDC");
-                        } else {
-                            addField(stream, serial, i, inv, t, c, FLD_PDC);
+                        for (uint8_t f = 0; f < sizeof(_publishFields) / sizeof(_publishFields[0]); f++) {
+                            if (t == TYPE_AC && _publishFields[f].field == FLD_PDC) {
+                                addField(stream, serial, i, inv, t, c, _publishFields[f].field, _metricTypes[_publishFields[f].type], "PowerDC");
+                            } else {
+                                addField(stream, serial, i, inv, t, c, _publishFields[f].field, _metricTypes[_publishFields[f].type]);
+                            }
                         }
-                        addField(stream, serial, i, inv, t, c, FLD_UDC);
-                        addField(stream, serial, i, inv, t, c, FLD_IDC);
-                        addField(stream, serial, i, inv, t, c, FLD_YD);
-                        addField(stream, serial, i, inv, t, c, FLD_YT);
-                        addField(stream, serial, i, inv, t, c, FLD_F);
-                        addField(stream, serial, i, inv, t, c, FLD_T);
-                        addField(stream, serial, i, inv, t, c, FLD_PF);
-                        addField(stream, serial, i, inv, t, c, FLD_PRA);
-                        addField(stream, serial, i, inv, t, c, FLD_EFF);
-                        addField(stream, serial, i, inv, t, c, FLD_IRR);
                     }
                 }
             }
@@ -102,26 +123,26 @@ void WebApiPrometheusClass::onPrometheusMetricsGet(AsyncWebServerRequest* reques
     }
 }
 
-void WebApiPrometheusClass::addField(AsyncResponseStream* stream, String& serial, uint8_t idx, std::shared_ptr<InverterAbstract> inv, ChannelType_t type, ChannelNum_t channel, FieldId_t fieldId, const char* channelName)
+void WebApiPrometheusClass::addField(AsyncResponseStream* stream, const String& serial, const uint8_t idx, std::shared_ptr<InverterAbstract> inv, const ChannelType_t type, const ChannelNum_t channel, const FieldId_t fieldId, const char* metricName, const char* channelName)
 {
     if (inv->Statistics()->hasChannelFieldValue(type, channel, fieldId)) {
-        const char* chanName = (channelName == NULL) ? inv->Statistics()->getChannelFieldName(type, channel, fieldId) : channelName;
+        const char* chanName = (channelName == nullptr) ? inv->Statistics()->getChannelFieldName(type, channel, fieldId) : channelName;
         if (idx == 0 && type == TYPE_AC && channel == 0) {
             stream->printf("# HELP opendtu_%s in %s\n", chanName, inv->Statistics()->getChannelFieldUnit(type, channel, fieldId));
-            stream->printf("# TYPE opendtu_%s %s\n", chanName, _metricTypes[_fieldMetricAssignment[fieldId]]);
+            stream->printf("# TYPE opendtu_%s %s\n", chanName, metricName);
         }
-        stream->printf("opendtu_%s{serial=\"%s\",unit=\"%d\",name=\"%s\",type=\"%s\",channel=\"%d\"} %f\n",
+        stream->printf("opendtu_%s{serial=\"%s\",unit=\"%d\",name=\"%s\",type=\"%s\",channel=\"%d\"} %s\n",
             chanName,
             serial.c_str(),
             idx,
             inv->name(),
             inv->Statistics()->getChannelTypeName(type),
             channel,
-            inv->Statistics()->getChannelFieldValue(type, channel, fieldId));
+            inv->Statistics()->getChannelFieldValueString(type, channel, fieldId).c_str());
     }
 }
 
-void WebApiPrometheusClass::addPanelInfo(AsyncResponseStream* stream, String& serial, uint8_t idx, std::shared_ptr<InverterAbstract> inv, ChannelType_t type, ChannelNum_t channel)
+void WebApiPrometheusClass::addPanelInfo(AsyncResponseStream* stream, const String& serial, const uint8_t idx, std::shared_ptr<InverterAbstract> inv, const ChannelType_t type, const ChannelNum_t channel)
 {
     if (type != TYPE_DC) {
         return;
@@ -139,8 +160,7 @@ void WebApiPrometheusClass::addPanelInfo(AsyncResponseStream* stream, String& se
         idx,
         inv->name(),
         channel,
-        config.Inverter[idx].channel[channel].Name
-    );
+        config.Inverter[idx].channel[channel].Name);
 
     if (printHelp) {
         stream->print("# HELP opendtu_MaxPower panel maximum output power\n");
@@ -151,8 +171,7 @@ void WebApiPrometheusClass::addPanelInfo(AsyncResponseStream* stream, String& se
         idx,
         inv->name(),
         channel,
-        config.Inverter[idx].channel[channel].MaxChannelPower
-    );
+        config.Inverter[idx].channel[channel].MaxChannelPower);
 
     if (printHelp) {
         stream->print("# HELP opendtu_YieldTotalOffset panel yield offset (for used inverters)\n");
@@ -163,6 +182,5 @@ void WebApiPrometheusClass::addPanelInfo(AsyncResponseStream* stream, String& se
         idx,
         inv->name(),
         channel,
-        config.Inverter[idx].channel[channel].YieldTotalOffset
-    );
+        config.Inverter[idx].channel[channel].YieldTotalOffset);
 }

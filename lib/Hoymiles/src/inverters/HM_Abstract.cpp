@@ -8,11 +8,12 @@
 #include "commands/AlarmDataCommand.h"
 #include "commands/DevInfoAllCommand.h"
 #include "commands/DevInfoSimpleCommand.h"
+#include "commands/GridOnProFilePara.h"
 #include "commands/PowerControlCommand.h"
 #include "commands/RealTimeRunDataCommand.h"
 #include "commands/SystemConfigParaCommand.h"
 
-HM_Abstract::HM_Abstract(HoymilesRadio* radio, uint64_t serial)
+HM_Abstract::HM_Abstract(HoymilesRadio* radio, const uint64_t serial)
     : InverterAbstract(radio, serial) {};
 
 bool HM_Abstract::sendStatsRequest()
@@ -29,14 +30,15 @@ bool HM_Abstract::sendStatsRequest()
     time_t now;
     time(&now);
 
-    RealTimeRunDataCommand* cmd = _radio->enqueCommand<RealTimeRunDataCommand>();
+    auto cmd = _radio->prepareCommand<RealTimeRunDataCommand>();
     cmd->setTime(now);
     cmd->setTargetAddress(serial());
+    _radio->enqueCommand(cmd);
 
     return true;
 }
 
-bool HM_Abstract::sendAlarmLogRequest(bool force)
+bool HM_Abstract::sendAlarmLogRequest(const bool force)
 {
     if (!getEnablePolling()) {
         return false;
@@ -60,10 +62,11 @@ bool HM_Abstract::sendAlarmLogRequest(bool force)
     time_t now;
     time(&now);
 
-    AlarmDataCommand* cmd = _radio->enqueCommand<AlarmDataCommand>();
+    auto cmd = _radio->prepareCommand<AlarmDataCommand>();
     cmd->setTime(now);
     cmd->setTargetAddress(serial());
     EventLog()->setLastAlarmRequestSuccess(CMD_PENDING);
+    _radio->enqueCommand(cmd);
 
     return true;
 }
@@ -82,13 +85,15 @@ bool HM_Abstract::sendDevInfoRequest()
     time_t now;
     time(&now);
 
-    DevInfoAllCommand* cmdAll = _radio->enqueCommand<DevInfoAllCommand>();
+    auto cmdAll = _radio->prepareCommand<DevInfoAllCommand>();
     cmdAll->setTime(now);
     cmdAll->setTargetAddress(serial());
+    _radio->enqueCommand(cmdAll);
 
-    DevInfoSimpleCommand* cmdSimple = _radio->enqueCommand<DevInfoSimpleCommand>();
+    auto cmdSimple = _radio->prepareCommand<DevInfoSimpleCommand>();
     cmdSimple->setTime(now);
     cmdSimple->setTargetAddress(serial());
+    _radio->enqueCommand(cmdSimple);
 
     return true;
 }
@@ -107,15 +112,16 @@ bool HM_Abstract::sendSystemConfigParaRequest()
     time_t now;
     time(&now);
 
-    SystemConfigParaCommand* cmd = _radio->enqueCommand<SystemConfigParaCommand>();
+    auto cmd = _radio->prepareCommand<SystemConfigParaCommand>();
     cmd->setTime(now);
     cmd->setTargetAddress(serial());
     SystemConfigPara()->setLastLimitRequestSuccess(CMD_PENDING);
+    _radio->enqueCommand(cmd);
 
     return true;
 }
 
-bool HM_Abstract::sendActivePowerControlRequest(float limit, PowerLimitControlType type)
+bool HM_Abstract::sendActivePowerControlRequest(float limit, const PowerLimitControlType type)
 {
     if (!getEnableCommands()) {
         return false;
@@ -128,10 +134,11 @@ bool HM_Abstract::sendActivePowerControlRequest(float limit, PowerLimitControlTy
     _activePowerControlLimit = limit;
     _activePowerControlType = type;
 
-    ActivePowerControlCommand* cmd = _radio->enqueCommand<ActivePowerControlCommand>();
+    auto cmd = _radio->prepareCommand<ActivePowerControlCommand>();
     cmd->setActivePowerLimit(limit, type);
     cmd->setTargetAddress(serial());
     SystemConfigPara()->setLastLimitCommandSuccess(CMD_PENDING);
+    _radio->enqueCommand(cmd);
 
     return true;
 }
@@ -141,7 +148,7 @@ bool HM_Abstract::resendActivePowerControlRequest()
     return sendActivePowerControlRequest(_activePowerControlLimit, _activePowerControlType);
 }
 
-bool HM_Abstract::sendPowerControlRequest(bool turnOn)
+bool HM_Abstract::sendPowerControlRequest(const bool turnOn)
 {
     if (!getEnableCommands()) {
         return false;
@@ -153,10 +160,11 @@ bool HM_Abstract::sendPowerControlRequest(bool turnOn)
         _powerState = 0;
     }
 
-    PowerControlCommand* cmd = _radio->enqueCommand<PowerControlCommand>();
+    auto cmd = _radio->prepareCommand<PowerControlCommand>();
     cmd->setPowerOn(turnOn);
     cmd->setTargetAddress(serial());
     PowerCommand()->setLastPowerCommandSuccess(CMD_PENDING);
+    _radio->enqueCommand(cmd);
 
     return true;
 }
@@ -169,10 +177,11 @@ bool HM_Abstract::sendRestartControlRequest()
 
     _powerState = 2;
 
-    PowerControlCommand* cmd = _radio->enqueCommand<PowerControlCommand>();
+    auto cmd = _radio->prepareCommand<PowerControlCommand>();
     cmd->setRestart();
     cmd->setTargetAddress(serial());
     PowerCommand()->setLastPowerCommandSuccess(CMD_PENDING);
+    _radio->enqueCommand(cmd);
 
     return true;
 }
@@ -194,4 +203,26 @@ bool HM_Abstract::resendPowerControlRequest()
         return false;
         break;
     }
+}
+
+bool HM_Abstract::sendGridOnProFileParaRequest()
+{
+    if (!getEnablePolling()) {
+        return false;
+    }
+
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo, 5)) {
+        return false;
+    }
+
+    time_t now;
+    time(&now);
+
+    auto cmd = _radio->prepareCommand<GridOnProFilePara>();
+    cmd->setTime(now);
+    cmd->setTargetAddress(serial());
+    _radio->enqueCommand(cmd);
+
+    return true;
 }

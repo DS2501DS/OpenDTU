@@ -23,6 +23,10 @@
                             </a></td>
                     </tr>
                     <tr>
+                        <th>{{ $t('firmwareinfo.PioEnv') }}</th>
+                        <td>{{ systemStatus.pioenv }}</td>
+                    </tr>
+                    <tr>
                         <th>{{ $t('firmwareinfo.FirmwareUpdate') }}</th>
                         <td><a :href="systemStatus.update_url" target="_blank" v-tooltip
                                 :title="$t('firmwareinfo.FirmwareUpdateHint')">
@@ -45,7 +49,7 @@
                     </tr>
                     <tr>
                         <th>{{ $t('firmwareinfo.Uptime') }}</th>
-                        <td>{{ timeInHours(systemStatus.uptime) }}</td>
+                        <td>{{ $t('firmwareinfo.UptimeValue', timeInHours(systemStatus.uptime)) }}</td>
                     </tr>
                 </tbody>
             </table>
@@ -69,7 +73,8 @@ export default defineComponent({
     computed: {
         timeInHours() {
             return (value: number) => {
-                return timestampToString(value, true);
+                const [count, time] = timestampToString(this.$i18n.locale, value, true);
+                return {count, time};
             };
         },
         versionInfoUrl(): string {

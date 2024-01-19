@@ -5,7 +5,7 @@
 
 class WebApiDtuClass {
 public:
-    void init(AsyncWebServer* server);
+    void init(AsyncWebServer& server);
     void loop();
 
 private:
@@ -13,4 +13,5 @@ private:
     void onDtuAdminPost(AsyncWebServerRequest* request);
 
     AsyncWebServer* _server;
+    bool _performReload = false;
 };

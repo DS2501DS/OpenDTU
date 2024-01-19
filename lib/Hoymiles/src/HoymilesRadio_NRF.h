@@ -2,7 +2,6 @@
 #pragma once
 
 #include "HoymilesRadio.h"
-#include "TimeoutHelper.h"
 #include "commands/CommandAbstract.h"
 #include <RF24.h>
 #include <memory>
@@ -14,14 +13,14 @@
 
 class HoymilesRadio_NRF : public HoymilesRadio {
 public:
-    void init(SPIClass* initialisedSpiBus, uint8_t pinCE, uint8_t pinIRQ);
+    void init(SPIClass* initialisedSpiBus, const uint8_t pinCE, const uint8_t pinIRQ);
     void loop();
-    void setPALevel(rf24_pa_dbm_e paLevel);
+    void setPALevel(const rf24_pa_dbm_e paLevel);
 
-    virtual void setDtuSerial(uint64_t serial);
+    virtual void setDtuSerial(const uint64_t serial);
 
-    bool isConnected();
-    bool isPVariant();
+    bool isConnected() const;
+    bool isPVariant() const;
 
 private:
     void ARDUINO_ISR_ATTR handleIntr();
@@ -29,9 +28,9 @@ private:
     uint8_t getTxNxtChannel();
     void switchRxCh();
     void openReadingPipe();
-    void openWritingPipe(serial_u serial);
+    void openWritingPipe(const serial_u serial);
 
-    void sendEsbPacket(CommandAbstract* cmd);
+    void sendEsbPacket(CommandAbstract& cmd);
 
     std::unique_ptr<SPIClass> _spiPtr;
     std::unique_ptr<RF24> _radio;
@@ -44,5 +43,4 @@ private:
     volatile bool _packetReceived = false;
 
     std::queue<fragment_t> _rxBuffer;
-    TimeoutHelper _rxTimeout;
 };

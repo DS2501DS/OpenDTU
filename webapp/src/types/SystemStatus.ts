@@ -10,6 +10,7 @@ export interface SystemStatus {
     config_version: string;
     git_hash: string;
     git_is_hash: boolean;
+    pioenv: string;
     resetreason_0: string;
     resetreason_1: string;
     cfgsavecount: number;
@@ -20,6 +21,8 @@ export interface SystemStatus {
     // MemoryInfo
     heap_total: number;
     heap_used: number;
+    heap_max_block: number;
+    heap_min_free: number;
     littlefs_total: number;
     littlefs_used: number;
     sketch_total: number;

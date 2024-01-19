@@ -11,23 +11,23 @@
 #define JSON_BUFFER_SIZE 6144
 
 #ifndef DISPLAY_TYPE
-#define DISPLAY_TYPE 0
+#define DISPLAY_TYPE 0U
 #endif
 
 #ifndef DISPLAY_DATA
-#define DISPLAY_DATA 255
+#define DISPLAY_DATA 255U
 #endif
 
 #ifndef DISPLAY_CLK
-#define DISPLAY_CLK 255
+#define DISPLAY_CLK 255U
 #endif
 
 #ifndef DISPLAY_CS
-#define DISPLAY_CS 255
+#define DISPLAY_CS 255U
 #endif
 
 #ifndef DISPLAY_RESET
-#define DISPLAY_RESET 255
+#define DISPLAY_RESET 255U
 #endif
 
 #ifndef LED0
@@ -36,6 +36,30 @@
 
 #ifndef LED1
 #define LED1 -1
+#endif
+
+#ifndef HOYMILES_PIN_SCLK
+#define HOYMILES_PIN_SCLK -1
+#endif
+
+#ifndef HOYMILES_PIN_CS
+#define HOYMILES_PIN_CS -1
+#endif
+
+#ifndef HOYMILES_PIN_CE
+#define HOYMILES_PIN_CE -1
+#endif
+
+#ifndef HOYMILES_PIN_IRQ
+#define HOYMILES_PIN_IRQ -1
+#endif
+
+#ifndef HOYMILES_PIN_MISO
+#define HOYMILES_PIN_MISO -1
+#endif
+
+#ifndef HOYMILES_PIN_MOSI
+#define HOYMILES_PIN_MOSI -1
 #endif
 
 #ifndef CMT_CLK
@@ -171,7 +195,7 @@ bool PinMappingClass::init(const String& deviceMapping)
     return false;
 }
 
-bool PinMappingClass::isValidNrf24Config()
+bool PinMappingClass::isValidNrf24Config() const
 {
     return _pinMapping.nrf24_clk >= 0
         && _pinMapping.nrf24_cs >= 0
@@ -181,7 +205,7 @@ bool PinMappingClass::isValidNrf24Config()
         && _pinMapping.nrf24_mosi >= 0;
 }
 
-bool PinMappingClass::isValidCmt2300Config()
+bool PinMappingClass::isValidCmt2300Config() const
 {
     return _pinMapping.cmt_clk >= 0
         && _pinMapping.cmt_cs >= 0
@@ -189,7 +213,7 @@ bool PinMappingClass::isValidCmt2300Config()
         && _pinMapping.cmt_sdio >= 0;
 }
 
-bool PinMappingClass::isValidEthConfig()
+bool PinMappingClass::isValidEthConfig() const
 {
     return _pinMapping.eth_enabled;
 }
